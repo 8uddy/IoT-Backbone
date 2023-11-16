@@ -3,7 +3,6 @@ import logging
 import os
 import json
 import time
-import xml.etree.ElementTree as ET
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
@@ -34,7 +33,7 @@ influxdb_host = os.getenv("INFLUXDB_HOST", "172.21.0.4")
 influxdb_port = int(os.getenv("INFLUXDB_PORT", "8086"))
 influxdb_token = os.getenv("INFLUXDB_TOKEN")
 influxdb_org = os.getenv("INFLUXDB_ORG","meineOrganisation")  # Stellen Sie sicher, dass diese Zeile korrekt ist
-influxdb_bucket = os.getenv("INFLUXDB_BUCKET", "AWS11")
+influxdb_bucket = os.getenv("INFLUXDB_BUCKET", "iot-raw")
 
 # InfluxDB-Client initialisieren
 influxdb_client = InfluxDBClient(url=f"http://{influxdb_host}:{influxdb_port}", token=influxdb_token, org=influxdb_org)
@@ -55,34 +54,25 @@ def process_message(msg):
         for k, v in payload.items():
             if k != "_timestamp":
                 if k == "target":
-                    # Versuche, das Feld 'target' als numerischen Wert zu behandeln
                     try:
-                        field_dict[k] = float(v)
+                        field_dict[k] = float(v) if v is not None else None
                     except ValueError:
-                        # Falls 'target' nicht in eine Zahl umgewandelt werden kann, behandle es als String
                         field_dict[k] = str(v)
                 elif v is None:
-                    # Umgang mit None-Werten, z.B. durch Ignorieren oder Ersetzen durch einen Standardwert
-                    continue  # Diese Zeile ignoriert None-Werte
+                    continue
                 elif isinstance(v, (dict, list)):
-                    # Konvertiere Dictionaries und Listen in JSON-Strings
                     field_dict[k] = json.dumps(v)
                 else:
                     try:
-                        # Versuche, den Wert in eine Ganzzahl umzuwandeln
                         field_dict[k] = int(v)
                     except (ValueError, TypeError):
                         try:
-                            # Falls die Umwandlung in eine Ganzzahl fehlschlägt, versuche eine Umwandlung in eine Gleitkommazahl
-                            field_dict[k] = float(v)
+                            field_dict[k] = float(v) if v is not None else None
                         except ValueError:
-                            # Behalte den ursprünglichen Wert bei, wenn keine Umwandlung möglich ist
                             field_dict[k] = v
 
-        # Prüfe, ob _timestamp vorhanden ist, ansonsten generiere aktuellen Timestamp
         timestamp = payload.get("_timestamp", int(time.time()))
     except json.JSONDecodeError:
-        # Fallback, falls die Payload kein JSON ist
         field_dict = {"value": msg.payload.decode()}
         timestamp = int(time.time())
 
@@ -107,7 +97,7 @@ def format_line_protocol(tag_dict, field_dict, timestamp):
                        else f'{key}="{value}"' for key, value in field_dict.items()])
 
     # Zusammenfügen des Line Protocols
-    line = f"mqtt_3,{tags} {fields} {timestamp_ns}"
+    line = f"mqtt,{tags} {fields} {timestamp_ns}"
     return line
 
 
@@ -119,6 +109,9 @@ def write_to_influxdb(line):
         write_api.write(bucket=influxdb_bucket, org=influxdb_org, record=line)
         logger.info(f"Data written to InfluxDB using Line Protocol: {line}")
         return True
+    except influxdb_client.exceptions.InfluxDBError as e:
+        logger.error(f"InfluxDB API error: {e}")
+        return False
     except Exception as e:
         logger.error(f"Error writing to InfluxDB: {e}")
         return False
