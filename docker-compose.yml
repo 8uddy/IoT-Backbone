@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    ports:
+      - "${MOSQUITTO_PORT}:1883"
+      - "${MOSQUITTO_WS_PORT}:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      IoT_network:
+        ipv4_address: 172.21.0.2
+
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "${INFLUXDB_PORT}:8086"
+    volumes:
+      - ./influxdb/data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_USERNAME}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
+    networks:
+      IoT_network:
+        ipv4_address: 172.21.0.4
+
+  mqtt_bridge:
+    build: MQTT_bridge
+    container_name: mqtt_bridge
+    depends_on:
+      - mosquitto
+    environment:
+      - MQTT_TOPIC=${MQTT_TOPIC}
+      - INFLUXDB_URL=http://172.21.0.4:${INFLUXDB_PORT}
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - IINFLUXDB_ORG=${INFLUXDB_ORG}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET}
+    networks:
+      IoT_network:
+        ipv4_address: 172.21.0.5
+
+networks:
+  IoT_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16

@@ -1,0 +1,28 @@
+def process_message(msg):
+    """
+    Verarbeitet die eingehende MQTT-Nachricht und extrahiert Tags und Felder für InfluxDB.
+    """
+    topic_segments = msg.topic.split('/')
+    tag_dict = {f"tag{i+1}": segment for i, segment in enumerate(topic_segments[:-1])}
+    field_name = topic_segments[-1]
+    try:
+        field_value = float(msg.payload.decode())
+    except ValueError:
+        field_value = msg.payload.decode()
+
+    #logger.info("tag_dict", tag_dict)
+    #logger.info("field_namet", field_name)
+    #logger.info("field_value", field_value)
+    return tag_dict, field_name, field_value
+
+def write_to_influxdb(tag_dict, field_name, field_value):
+    """
+    Schreibt Daten in die InfluxDB basierend auf den bereitgestellten Tags, Feldnamen und Feldwert.
+    """
+    point = Point("your_measurement")
+    for tag_key, tag_value in tag_dict.items():
+        point = point.tag(tag_key, tag_value)
+    point = point.field(field_name, field_value)
+    write_api.write(bucket=influxdb_bucket, org=influxdb_org, record=point)
+    logger.info(f"Data written to InfluxDB: {field_value}, Tags: {tag_dict}, Field: {field_name}")
+    #print(f"Data written to InfluxDB: {field_value}, Tags: {tag_dict}, Field: {field_name}")
